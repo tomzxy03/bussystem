@@ -3,7 +3,6 @@ package com.tomzxy.busozy.service.interfaces;
 import com.tomzxy.busozy.dto.request.CreateBookingReqDTO;
 import com.tomzxy.busozy.dto.response.BookingDetailResDTO;
 import com.tomzxy.busozy.dto.response.BookingResDTO;
-import com.tomzxy.busozy.entity.Booking;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
