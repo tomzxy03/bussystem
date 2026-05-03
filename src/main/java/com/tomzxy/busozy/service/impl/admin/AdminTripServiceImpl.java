@@ -6,6 +6,7 @@ import com.tomzxy.busozy.config.RedisConfig;
 import com.tomzxy.busozy.dto.request.TripCreateReqDTO;
 import com.tomzxy.busozy.dto.response.TripResDTO;
 import com.tomzxy.busozy.entity.*;
+import com.tomzxy.busozy.event.TripCompletedEvent;
 import com.tomzxy.busozy.exception.BusinessException;
 import com.tomzxy.busozy.exception.ResourceNotFoundException;
 import com.tomzxy.busozy.mapper.TripMapper;
@@ -14,6 +15,7 @@ import com.tomzxy.busozy.service.interfaces.admin.AdminTripService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +39,8 @@ public class AdminTripServiceImpl implements AdminTripService {
     private final TripMapper tripMapper;
     private final RedisTemplate<String, Object> redisTemplate;
     private final RedisConfig redisConfig;
+    private final BookingRepository bookingRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final String KEY_TRIP_SEATS = "trip:seats:";
 
@@ -117,6 +121,7 @@ public class AdminTripServiceImpl implements AdminTripService {
     @Transactional
     public TripResDTO updateTripStatus(Long id, TripStatus status) {
         Trip trip = requireTrip(id);
+        TripStatus previousStatus = trip.getStatus();
         if (!trip.getStatus().canTransitionTo(status)) {
             throw new BusinessException(ErrorCode.INVALID_STATUS_TRANSITION,
                     "Không thể chuyển từ " + trip.getStatus() + " sang " + status);
@@ -124,7 +129,12 @@ public class AdminTripServiceImpl implements AdminTripService {
         trip.setStatus(status);
         tripRepository.save(trip);
 
-        log.info("Trip {} status changed: {} → {}", id, trip.getStatus(), status);
+        if (status == TripStatus.COMPLETED) {
+            bookingRepository.batchMarkCompletedByTripId(id);
+            eventPublisher.publishEvent(new TripCompletedEvent(id));
+        }
+
+        log.info("Trip {} status changed: {} -> {}", id, previousStatus, status);
         if (status == TripStatus.CANCELLED || status == TripStatus.COMPLETED) {
             evictTripSeatsCache(id);
         }

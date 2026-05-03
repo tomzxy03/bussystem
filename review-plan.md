@@ -1,54 +1,141 @@
-﻿# 4 Critical Production Checks
-1️⃣ Circular Dependency & ApplicationContext Anti-Pattern
-Vấn đề: Walkthrough ghi "gọi promotionService.incrementUsage qua ApplicationContext.getBean() trong confirmPayment". Đây là dấu hiệu của Circular Dependency (BookingService ↔ PromotionService). Dùng ApplicationContext chỉ là workaround, khó test và vi phạm nguyên tắc DI.
-✅ Giải pháp chuẩn: Dùng Spring Events (đã có sẵn từ Phase 8).
+﻿1. Cập nhật PromotionRepository.java
+Thêm method decrementUsage để giảm số lượt dùng mã khuyến mãi.
 ```java
-// Trong PaymentServiceImpl (sau khi update booking PAID)
-eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId(), booking.getPromotionId()));
+package com.tomzxy.busozy.repository;
 
-// PromotionListener.java
-@Component @RequiredArgsConstructor
-public class PromotionUsageListener {
-    private final PromotionService promotionService;
+import com.tomzxy.busozy.entity.Promotion;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
 
-    @Async
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onBookingConfirmed(BookingConfirmedEvent event) {
-        if (event.promotionId() != null) {
-            promotionService.incrementUsage(event.promotionId(), event.bookingId());
+import java.util.Optional;
+
+@Repository
+public interface PromotionRepository extends JpaRepository<Promotion, Long> {
+    Optional<Promotion> findByCodeAndIsActiveTrue(String code);
+
+    // Logic tăng (đã có)
+    @Modifying
+    @Query("UPDATE Promotion p SET p.usedCount = p.usedCount + 1 WHERE p.id = :id AND p.usedCount < p.usageLimit")
+    int incrementUsage(Long id);
+
+    // 🔴 FIX: Logic giảm khi hủy vé
+    // Giảm usedCount nhưng không được nhỏ hơn 0
+    @Modifying
+    @Query("UPDATE Promotion p SET p.usedCount = p.usedCount - 1 WHERE p.id = :id AND p.usedCount > 0")
+    int decrementUsage(Long id);
+}
+```
+2. Cập nhật CancellationServiceImpl.java
+Thêm logic rollback promotion và capping refund amount vào luồng hủy vé.
+```java
+package com.tomzxy.busozy.service.impl;
+
+import com.tomzxy.busozy.common.enums.ErrorCode;
+import com.tomzxy.busozy.dto.request.CancelBookingReqDTO;
+import com.tomzxy.busozy.dto.response.CancellationResDTO;
+import com.tomzxy.busozy.entity.Booking;
+import com.tomzxy.busozy.entity.Cancellation;
+import com.tomzxy.busozy.entity.CancellationPolicy;
+import com.tomzxy.busozy.entity.Payment;
+import com.tomzxy.busozy.enums.BookingStatus;
+import com.tomzxy.busozy.enums.PaymentStatus;
+import com.tomzxy.busozy.enums.RefundStatus;
+import com.tomzxy.busozy.exception.BusinessException;
+import com.tomzxy.busozy.repository.BookingRepository;
+import com.tomzxy.busozy.repository.CancellationRepository;
+import com.tomzxy.busozy.repository.PromotionRepository;
+import com.tomzxy.busozy.service.interfaces.CancellationService;
+import com.tomzxy.busozy.service.interfaces.PromotionService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+
+@Service
+@RequiredArgsConstructor
+public class CancellationServiceImpl implements CancellationService {
+
+    private final CancellationRepository cancellationRepository;
+    private final BookingRepository bookingRepository;
+    private final PromotionRepository promotionRepository; // Inject repo để decrement
+    private final PromotionService promotionService;       // Inject service nếu cần logic phức tạp
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Transactional
+    public CancellationResDTO cancelBooking(Long userId, String bookingCode, CancelBookingReqDTO req) {
+        // 1. Validate Booking
+        Booking booking = bookingRepository.findByBookingCodeAndUserId(bookingCode, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.BOOKING_001));
+
+        if (booking.getStatus() != BookingStatus.PENDING && booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw new BusinessException(ErrorCode.CANCEL_003);
         }
-    }
-}
-```
-→ Tách biệt hoàn toàn, không vòng lặp dependency, tự động rollback nếu increment fail.
-2️⃣ Xử Lý Trường Hợp Hết Limit Đúng Lúc Confirm
-Vấn đề: Query optimistic UPDATE ... WHERE used_count < usage_limit trả về rowCount == 0 nghĩa là limit đã đầy giữa lúc validate và thanh toán.
-✅ Policy đề xuất: Fail fast & Rollback. Không cho phép booking confirm với discount ảo.
-```java
-int updated = promotionRepository.incrementUsage(promotionId);
-if (updated == 0) {
-    throw new BusinessException(ErrorCode.PROMO_003); // Trigger rollback transaction
-}
-```
-3️⃣ M2M Route Check Hiệu Năng
-Vấn đề: Check route scope applicability bằng cách load Set<Route> applicableRoutes gây N+1 hoặc memory waste.
-✅ Tối ưu: Dùng repository existsBy trực tiếp.
-```java
-// PromotionRepository.java
-@Query("SELECT COUNT(pr) > 0 FROM PromotionRoute pr WHERE pr.promotion.id = :promoId AND pr.route.id = :routeId")
-boolean existsByPromotionIdAndRouteId(@Param("promoId") Long promoId, @Param("routeId") Long routeId);
 
-// Service validation
-if (!promo.getApplicableRoutes().isEmpty() && 
-    !promoRepository.existsByPromotionIdAndRouteId(promo.getId(), routeId)) {
-    return PromotionValidateResDTO.of(false, "Mã không áp dụng cho tuyến này");
+        // 2. Resolve Policy & Calculate Refund
+        CancellationPolicy policy = resolvePolicy(booking);
+        BigDecimal calculatedRefund = calculateRefundAmount(booking, policy);
+
+        // 🔴 FIX ITEM #2: Capping Refund Amount
+        // Số tiền hoàn không được vượt quá số tiền thực tế đã thanh toán
+        BigDecimal maxRefund = BigDecimal.ZERO;
+        if (booking.getPaymentStatus() == PaymentStatus.PAID && booking.getPayment() != null) {
+            maxRefund = booking.getPayment().getAmount();
+        }
+        BigDecimal finalRefundAmount = calculatedRefund.min(maxRefund);
+
+        // 3. Update Booking Status
+        booking.setStatus(BookingStatus.CANCELLED);
+        if (finalRefundAmount.compareTo(BigDecimal.ZERO) > 0) {
+            booking.setPaymentStatus(PaymentStatus.REFUNDED);
+        }
+        bookingRepository.save(booking);
+
+        // 4. Create Cancellation Record
+        Cancellation cancellation = new Cancellation();
+        cancellation.setBooking(booking);
+        cancellation.setCancelledBy(/* Lấy user từ SecurityContext */);
+        cancellation.setCancelReason(req.getReason());
+        cancellation.setCancelTime(OffsetDateTime.now());
+        cancellation.setRefundAmount(finalRefundAmount);
+        cancellation.setRefundStatus(finalRefundAmount.compareTo(BigDecimal.ZERO) > 0 
+                ? RefundStatus.PENDING : RefundStatus.COMPLETED);
+        cancellationRepository.save(cancellation);
+
+        // 🔴 FIX ITEM #1: Promotion Rollback
+        // Nếu booking có dùng mã khuyến mãi, hoàn trả lại lượt dùng
+        if (booking.getPromotionId() != null) {
+            int updated = promotionRepository.decrementUsage(booking.getPromotionId());
+            if (updated == 0) {
+                // Log warning nếu không giảm được (edge case hiếm)
+                // Có thể cần xử lý thêm nếu logic strict
+            }
+            
+            // Nếu có bảng UserPromotionUsage, cũng cần decrement ở bảng đó
+            // userPromotionUsageRepository.decrementUsage(userId, booking.getPromotionId());
+        }
+
+        // 5. Trigger Refund Event (Async)
+        if (finalRefundAmount.compareTo(BigDecimal.ZERO) > 0 && booking.getPaymentStatus() == PaymentStatus.PAID) {
+            eventPublisher.publishEvent(new RefundRequestedEvent(cancellation.getId(), booking.getPayment().getGatewayTransactionId(), finalRefundAmount));
+        }
+
+        return mapToResponse(cancellation);
+    }
+    
+    // ... các method calculateRefundAmount, resolvePolicy ...
 }
 ```
-4️⃣ Timezone Handling Cho Validity Window
-Vấn đề: valid_from/valid_to là OffsetDateTime. So sánh với OffsetDateTime.now() có thể sai lệch múi giờ server.
-✅ Fix: Luôn ép về Asia/Ho_Chi_Minh.
-```java
-ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
-OffsetDateTime now = OffsetDateTime.now(VN_ZONE);
-if (now.isBefore(promo.getValidFrom()) || now.isAfter(promo.getValidTo())) { ... }
-```
+3. Giải thích kỹ thuật cho Fix này
+ACID Transaction:
+Toàn bộ logic trên nằm trong @Transactional. Nếu promotionRepository.decrementUsage thất bại (ví dụ lỗi DB), thì transaction sẽ rollback → Booking cũng không bị hủy sai. Điều này đảm bảo dữ liệu đồng nhất tuyệt đối.
+Refund Capping (Item #2):
+Code calculatedRefund.min(maxRefund) đảm bảo rằng dù chính sách hoàn tiền có tính ra bao nhiêu đi nữa, bạn cũng không bao giờ trả lại cho User nhiều hơn số tiền họ đã thực sự trả (đặc biệt quan trọng khi tích hợp cổng thanh toán tính phí).
+Promotion Safety (Item #1):
+Query UPDATE ... SET usedCount = usedCount - 1 WHERE id = ? AND usedCount > 0 an toàn hơn là UPDATE ... SET usedCount = usedCount - 1 bình thường. Nó đảm bảo số lượt dùng không bao giờ bị âm (ví dụ: -1) do lỗi concurrent nào đó.

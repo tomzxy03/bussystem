@@ -4,6 +4,7 @@ import com.tomzxy.busozy.entity.Booking;
 import com.tomzxy.busozy.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,9 +20,35 @@ import java.util.UUID;
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
+    interface DashboardStatsProjection {
+        Long getTotalBookingsToday();
+
+        java.math.BigDecimal getTotalRevenueToday();
+
+        Long getPendingBookingsCount();
+    }
+
+    interface RouteStatsProjection {
+        String getRouteName();
+
+        Long getTotalBookings();
+
+        java.math.BigDecimal getTotalRevenue();
+    }
+
     Optional<Booking> findByBookingCode(UUID bookingCode);
 
     Page<Booking> findByUserOrderByCreatedAtDesc(User user, Pageable pageable);
+
+    @Query("""
+            SELECT b FROM Booking b
+            JOIN FETCH b.user
+            WHERE b.trip.id = :tripId
+              AND b.status = :status
+            """)
+    List<Booking> findByTripIdAndStatus(
+            @Param("tripId") Long tripId,
+            @Param("status") com.tomzxy.busozy.common.enums.BookingStatus status);
 
     @Query("SELECT b FROM Booking b WHERE (:status IS NULL OR b.status = :status) ORDER BY b.createdAt DESC")
     Page<Booking> findAllForAdmin(@Param("status") com.tomzxy.busozy.common.enums.BookingStatus status, Pageable pageable);
@@ -60,6 +88,15 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
               AND b.reservedUntil < :now
             """)
     int batchExpirePending(@Param("now") OffsetDateTime now);
+
+    @Modifying
+    @Query("""
+            UPDATE Booking b
+            SET b.status = 'COMPLETED'
+            WHERE b.trip.id = :tripId
+              AND b.status = 'CONFIRMED'
+            """)
+    int batchMarkCompletedByTripId(@Param("tripId") Long tripId);
 
     /**
      * Returns tripIds of bookings that were just expired (for cache invalidation).
@@ -116,4 +153,40 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     java.math.BigDecimal sumTodayRevenueByCompanyId(
             @Param("companyId") Long companyId,
             @Param("today") java.time.LocalDate today);
+
+    @Query("""
+            SELECT COUNT(b) AS totalBookingsToday,
+                   COALESCE(SUM(CASE
+                       WHEN b.paymentStatus = 'PAID' AND CAST(b.createdAt AS LocalDate) = :today
+                       THEN b.finalPrice
+                       ELSE 0
+                   END), 0) AS totalRevenueToday,
+                   (SELECT COUNT(pb) FROM Booking pb WHERE pb.status = 'PENDING') AS pendingBookingsCount
+            FROM Booking b
+            WHERE b.status <> 'EXPIRED'
+              AND CAST(b.createdAt AS LocalDate) = :today
+            """)
+    DashboardStatsProjection getTodayStats(@Param("today") LocalDate today);
+
+    @Query("""
+            SELECT r.name AS routeName,
+                   COUNT(b) AS totalBookings,
+                   COALESCE(SUM(CASE WHEN b.paymentStatus = 'PAID' THEN b.finalPrice ELSE 0 END), 0) AS totalRevenue
+            FROM Booking b
+            JOIN b.trip t
+            JOIN t.route r
+            WHERE b.status <> 'EXPIRED'
+              AND CAST(b.createdAt AS LocalDate) = :today
+            GROUP BY r.name
+            ORDER BY COUNT(b) DESC, COALESCE(SUM(CASE WHEN b.paymentStatus = 'PAID' THEN b.finalPrice ELSE 0 END), 0) DESC
+            """)
+    List<RouteStatsProjection> findTopRouteStats(@Param("today") LocalDate today, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"trip", "trip.route", "trip.route.company"})
+    @Query("""
+            SELECT b FROM Booking b
+            WHERE b.status <> 'EXPIRED'
+            ORDER BY b.createdAt DESC
+            """)
+    List<Booking> findRecentBookings(Pageable pageable);
 }

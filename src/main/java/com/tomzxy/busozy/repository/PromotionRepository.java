@@ -36,6 +36,14 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
       """)
   int incrementUsedCount(@Param("id") Long id);
 
+  @Modifying
+  @Query("""
+      UPDATE Promotion p SET p.usedCount = p.usedCount - 1
+      WHERE p.id = :id
+        AND p.usedCount > 0
+      """)
+  int decrementUsedCount(@Param("id") Long id);
+
   /**
    * Find active promotions applicable to a specific route (for caching by route).
    */

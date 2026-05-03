@@ -79,4 +79,10 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
               AND r.company.id = :companyId
             """)
     boolean routeBelongsToCompany(@Param("routeId") Long routeId, @Param("companyId") Long companyId);
+
+    @Query("""
+            SELECT COUNT(t) FROM Trip t
+            WHERE t.status IN :statuses
+            """)
+    long countByStatusIn(@Param("statuses") List<com.tomzxy.busozy.common.enums.TripStatus> statuses);
 }

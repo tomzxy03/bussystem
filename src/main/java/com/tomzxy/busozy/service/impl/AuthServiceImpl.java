@@ -193,6 +193,13 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException(ErrorCode.INVALID_CREDENTIALS);
         }
 
+        if (Boolean.TRUE.equals(user.getIsBanned())) {
+            throw new BusinessException(ErrorCode.ACCOUNT_BANNED,
+                    user.getBanReason() != null && !user.getBanReason().isBlank()
+                            ? "Tài khoản đã bị khóa: " + user.getBanReason()
+                            : ErrorCode.ACCOUNT_BANNED.getDefaultMessage());
+        }
+
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw new BusinessException(ErrorCode.ACCOUNT_INACTIVE);
         }
@@ -229,6 +236,13 @@ public class AuthServiceImpl implements AuthService {
 
         if (storedToken == null || !refreshToken.equals(storedToken.toString())) {
             throw new UnauthorizedException(ErrorCode.TOKEN_INVALID);
+        }
+
+        if (Boolean.TRUE.equals(user.getIsBanned())) {
+            throw new BusinessException(ErrorCode.ACCOUNT_BANNED,
+                    user.getBanReason() != null && !user.getBanReason().isBlank()
+                            ? "Tài khoản đã bị khóa: " + user.getBanReason()
+                            : ErrorCode.ACCOUNT_BANNED.getDefaultMessage());
         }
 
         if (!jwtService.isTokenValid(refreshToken, user)) {

@@ -1,10 +1,14 @@
 package com.tomzxy.busozy.controller;
 
 import com.tomzxy.busozy.common.ApiResponse;
+import com.tomzxy.busozy.dto.request.CancelBookingReqDTO;
 import com.tomzxy.busozy.dto.request.CreateBookingReqDTO;
 import com.tomzxy.busozy.dto.response.BookingDetailResDTO;
 import com.tomzxy.busozy.dto.response.BookingResDTO;
+import com.tomzxy.busozy.dto.response.CancellationPreviewResDTO;
+import com.tomzxy.busozy.dto.response.CancellationResDTO;
 import com.tomzxy.busozy.service.interfaces.BookingService;
+import com.tomzxy.busozy.service.interfaces.CancellationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,6 +32,7 @@ import java.util.UUID;
 public class BookingController {
 
     private final BookingService bookingService;
+    private final CancellationService cancellationService;
 
     @Operation(summary = "Tạo booking mới (giữ ghế 10 phút)")
     @PostMapping
@@ -64,14 +69,33 @@ public class BookingController {
                 bookingService.getBookingDetail(extractUserId(userDetails), code)));
     }
 
-    @Operation(summary = "Hủy booking")
-    @PostMapping("/{code}/cancel")
-    public ResponseEntity<ApiResponse<BookingResDTO>> cancelBooking(
+    @Operation(summary = "Xem trước số tiền hoàn khi hủy")
+    @GetMapping("/{code}/cancellation-preview")
+    public ResponseEntity<ApiResponse<CancellationPreviewResDTO>> getCancellationPreview(
             @PathVariable UUID code,
             @AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.ok(ApiResponse.ok(
-                bookingService.cancelBooking(extractUserId(userDetails), code),
+                cancellationService.getCancellationPreview(extractUserId(userDetails), code)));
+    }
+
+    @Operation(summary = "Hủy booking và khởi tạo hoàn tiền")
+    @PostMapping("/{code}/cancel")
+    public ResponseEntity<ApiResponse<CancellationResDTO>> cancelBooking(
+            @PathVariable UUID code,
+            @Valid @RequestBody CancelBookingReqDTO req,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                cancellationService.cancelBooking(extractUserId(userDetails), code, req),
                 "Hủy vé thành công"));
+    }
+
+    @Operation(summary = "Chi tiết cancellation của booking")
+    @GetMapping("/{code}/cancellation")
+    public ResponseEntity<ApiResponse<CancellationResDTO>> getCancellationDetail(
+            @PathVariable UUID code,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                cancellationService.getCancellationDetail(extractUserId(userDetails), code)));
     }
 
     /**

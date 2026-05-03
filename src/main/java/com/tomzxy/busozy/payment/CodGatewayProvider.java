@@ -3,6 +3,8 @@ package com.tomzxy.busozy.payment;
 import com.tomzxy.busozy.entity.Payment;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -34,5 +36,16 @@ public class CodGatewayProvider implements PaymentGatewayProvider {
     public PaymentProcessResult processCallback(Map<String, String> params) {
         // COD is always treated as successful at initiation
         return new PaymentProcessResult(true, UUID.randomUUID().toString(), params);
+    }
+
+    @Override
+    public GatewayRefundResponse refund(Payment payment, BigDecimal amount, String reason) {
+        Map<String, Object> raw = new HashMap<>();
+        raw.put("provider", "COD");
+        raw.put("status", "COMPLETED");
+        raw.put("amount", amount);
+        raw.put("reason", reason);
+        raw.put("paymentId", payment.getId());
+        return new GatewayRefundResponse("COD-REFUND-" + payment.getId(), raw);
     }
 }

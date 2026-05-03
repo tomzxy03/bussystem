@@ -188,7 +188,11 @@ public class PaymentServiceImpl implements PaymentService {
         // 6. If PAID → confirm booking + async event
         if (result.success()) {
             bookingService.confirmPayment(payment.getBooking().getId());
-            eventPublisher.publishEvent(new PaymentSuccessEvent(payment));
+            eventPublisher.publishEvent(new PaymentSuccessEvent(
+                    payment.getId(),
+                    payment.getBooking().getId(),
+                    payment.getBooking().getUser().getId(),
+                    payment.getBooking().getBookingCode().toString()));
             log.info("Payment PAID via {}: paymentId={}", provider, payment.getId());
         } else {
             log.info("Payment FAILED via {}: paymentId={}", provider, payment.getId());

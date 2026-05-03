@@ -32,4 +32,14 @@ public interface UserPromotionUsageRepository extends JpaRepository<UserPromotio
     void upsertUsage(@Param("userId") Long userId,
             @Param("promotionId") Long promotionId,
             @Param("now") OffsetDateTime now);
+
+    @Modifying
+    @Query(value = """
+            UPDATE user_promotion_usage
+            SET used_count = used_count - 1
+            WHERE user_id = :userId
+              AND promotion_id = :promotionId
+              AND used_count > 0
+            """, nativeQuery = true)
+    int decrementUsage(@Param("userId") Long userId, @Param("promotionId") Long promotionId);
 }

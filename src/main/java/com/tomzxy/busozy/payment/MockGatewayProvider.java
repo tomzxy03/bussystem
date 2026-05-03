@@ -4,6 +4,8 @@ import com.tomzxy.busozy.entity.Payment;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -44,5 +46,16 @@ public class MockGatewayProvider implements PaymentGatewayProvider {
         String txId = params.getOrDefault("transactionId", UUID.randomUUID().toString());
         boolean success = !"FAILED".equalsIgnoreCase(params.getOrDefault("resultCode", "SUCCESS"));
         return new PaymentProcessResult(success, txId, params);
+    }
+
+    @Override
+    public GatewayRefundResponse refund(Payment payment, BigDecimal amount, String reason) {
+        Map<String, Object> raw = new HashMap<>();
+        raw.put("provider", "BANK_TRANSFER");
+        raw.put("status", "COMPLETED");
+        raw.put("amount", amount);
+        raw.put("reason", reason);
+        raw.put("paymentId", payment.getId());
+        return new GatewayRefundResponse("MOCK-REFUND-" + payment.getId() + "-" + UUID.randomUUID(), raw);
     }
 }

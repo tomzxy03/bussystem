@@ -12,6 +12,7 @@ public enum ErrorCode {
     TOKEN_INVALID("AUTH_007", "Token không hợp lệ"),
     TOKEN_EXPIRED("AUTH_008", "Token đã hết hạn"),
     IDEMPOTENCY_DUPLICATE("AUTH_009", "Yêu cầu đã được xử lý trước đó"),
+    ACCOUNT_BANNED("AUTH_010", "Tài khoản đã bị khóa"),
 
     // Payment
     PAYMENT_NOT_FOUND("PAY_001", "Không tìm thấy thông tin thanh toán"),
@@ -92,6 +93,24 @@ public enum ErrorCode {
     PROMOTION_MIN_ORDER_NOT_MET("PROMO_005", "Đơn hàng chưa đạt giá trị tối thiểu để áp dụng mã"),
     PROMOTION_ROUTE_NOT_APPLICABLE("PROMO_006", "Mã không áp dụng cho tuyến đường này"),
     PROMOTION_ALREADY_APPLIED("PROMO_007", "Mã đã được áp dụng cho đơn hàng này"),
+
+    // Review
+    REVIEW_NOT_FOUND("REV_001", "Đánh giá không tồn tại"),
+    BOOKING_NOT_COMPLETED("REV_002", "Chỉ có thể đánh giá chuyến đã hoàn thành"),
+    REVIEW_ALREADY_EXISTS("REV_003", "Bạn đã đánh giá chuyến này rồi"),
+    REVIEW_ACCESS_DENIED("REV_004", "Bạn không có quyền xóa hoặc sửa đánh giá này"),
+
+    // Notification
+    NOTIFICATION_NOT_FOUND("NOTIF_001", "Thông báo không tồn tại"),
+    CHANNEL_UNSUPPORTED("NOTIF_002", "Kênh thông báo chưa được hỗ trợ"),
+
+    // Cancellation
+    CANCELLATION_NOT_FOUND("CANCEL_001", "Lịch sử hủy vé không tồn tại"),
+    BOOKING_ALREADY_CANCELLED("CANCEL_002", "Vé đã được hủy trước đó"),
+    CANCELLATION_NOT_ALLOWED("CANCEL_003", "Không thể hủy vé ở trạng thái này hoặc đã quá thời gian cho phép"),
+    REFUND_POLICY_NOT_FOUND("CANCEL_004", "Không tìm thấy chính sách hoàn tiền áp dụng"),
+    REFUND_PROCESSING_FAILED("CANCEL_005", "Xử lý hoàn tiền thất bại, vui lòng liên hệ admin"),
+    CANCELLATION_ACCESS_DENIED("CANCEL_006", "Bạn không có quyền hủy vé này"),
 
     // General
     RESOURCE_NOT_FOUND("GEN_001", "Không tìm thấy tài nguyên"),

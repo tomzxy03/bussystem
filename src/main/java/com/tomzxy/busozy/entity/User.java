@@ -84,6 +84,13 @@ public class User extends BaseEntity implements UserDetails {
     @Column(name = "last_login_ip", length = 45)
     private String lastLoginIp;
 
+    @Column(name = "is_banned", nullable = false)
+    @Builder.Default
+    private Boolean isBanned = false;
+
+    @Column(name = "ban_reason", length = 255)
+    private String banReason;
+
     // ─────────────────────────────────────────────
     // UserDetails – explicit overrides required
     // (Lombok @Getter would conflict with interface methods)
@@ -116,7 +123,7 @@ public class User extends BaseEntity implements UserDetails {
     @Override
     @com.fasterxml.jackson.annotation.JsonIgnore
     public boolean isAccountNonLocked() {
-        return status != UserStatus.BLOCKED;
+        return status != UserStatus.BLOCKED && !Boolean.TRUE.equals(isBanned);
     }
 
     @Override
@@ -128,7 +135,7 @@ public class User extends BaseEntity implements UserDetails {
     @Override
     @com.fasterxml.jackson.annotation.JsonIgnore
     public boolean isEnabled() {
-        return status == UserStatus.ACTIVE;
+        return status == UserStatus.ACTIVE && !Boolean.TRUE.equals(isBanned);
     }
 
     // Helper methods

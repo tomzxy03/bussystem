@@ -2,6 +2,7 @@ package com.tomzxy.busozy.payment;
 
 import com.tomzxy.busozy.entity.Payment;
 
+import java.math.BigDecimal;
 import java.util.Map;
 
 /**
@@ -39,4 +40,9 @@ public interface PaymentGatewayProvider {
      * Processes the callback params and returns the outcome.
      */
     PaymentProcessResult processCallback(Map<String, String> params);
+
+    /**
+     * Processes a refund request for a previously paid payment.
+     */
+    GatewayRefundResponse refund(Payment payment, BigDecimal amount, String reason);
 }
